@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "ROYA LinkedIn LeadGrab",
+  "version": "1.0.2",
+  "description": "Extract lead info from LinkedIn profiles to Google Sheets",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "sidePanel"
+  ],
+  "host_permissions": [
+    "https://script.google.com/*",
+    "https://*.googleusercontent.com/*",
+    "https://www.linkedin.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "index.html"
+  },
+  "action": {
+    "default_title": "Open ROYA LinkedIn LeadGrab"
+  }
+}

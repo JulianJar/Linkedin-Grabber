@@ -1,0 +1,5 @@
+{
+  "name": "ROYA LinkedIn LeadGrab",
+  "description": "Extract LinkedIn profile data using Gemini AI and prepare it for Google Sheets.",
+  "requestFramePermissions": []
+}

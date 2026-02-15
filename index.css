@@ -1,0 +1,10 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+    width: 400px; /* Force width for Chrome Extension Popup */
+    min-height: 500px;
+    margin: 0;
+    overflow-x: hidden;
+}
