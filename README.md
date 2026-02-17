@@ -1,5 +1,7 @@
 # ROYA LinkedIn LeadGrab 🚀
 
+** IMPORTANTIt might initially take a few seconds to load the extension**
+
 A powerful Chrome Extension built with React, TypeScript, and Vite designed to streamline LinkedIn prospecting. It allows you to extract profile data, generate AI-powered connection requests, manage messaging templates, and sync leads directly to Google Sheets.
 
 ## ✨ Features
