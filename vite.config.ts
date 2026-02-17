@@ -34,19 +34,24 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
-    modulePreload: false, // Disable module preload polyfill for faster extension loading
+    sourcemap: false, // Disable sourcemaps for production/extension speed
+    modulePreload: false, // Important for extensions to avoid loading issues
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),
         background: resolve(__dirname, 'background.ts'),
       },
       output: {
-        // Force simple filenames and minimal chunking for extensions
-        manualChunks: undefined,
+        // Simple filenames to ensure manifest.json references remain valid
         entryFileNames: '[name].js',
         chunkFileNames: '[name].js',
         assetFileNames: '[name].[ext]'
       },
+    },
+  },
+  resolve: {
+    alias: {
+      "@": resolve(__dirname, "./"),
     },
   },
 });
