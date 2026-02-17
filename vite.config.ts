@@ -34,13 +34,18 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    modulePreload: false, // Disable module preload polyfill for faster extension loading
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),
         background: resolve(__dirname, 'background.ts'),
       },
       output: {
+        // Force simple filenames and minimal chunking for extensions
+        manualChunks: undefined,
         entryFileNames: '[name].js',
+        chunkFileNames: '[name].js',
+        assetFileNames: '[name].[ext]'
       },
     },
   },

@@ -6,19 +6,30 @@ export const scrapeLinkedInProfile = (): ExtractedData & { url: string } => {
   const clean = (text: string | undefined | null) => {
     if (!text) return '';
     // Remove newlines, excessive spaces
-    let cleaned = text.replace(/\s+/g, ' ').trim();
+    let cleaned = text.replace(/[\s\u00A0]+/g, ' ').trim();
     return cleaned;
   };
 
   const isGarbage = (text: string) => {
     if (!text) return true;
     const lower = text.toLowerCase();
+    
+    // Explicitly ignore "0 notifications" or "5 notifications" type strings
+    if (lower.includes('notifications') && text.length < 30) return true;
+
     // Check for code/scripts that might have slipped through
     if (text.includes('function') || text.includes('window.') || text.includes('{') || text.includes('var ')) return true;
+    
     // Check for nav bar items / numbers
     if (text === '0' || !isNaN(Number(text))) return true;
-    if (['notifications', 'messaging', 'my network', 'home', 'jobs', 'advertising', 'contact info', 'edit', 'verify now'].includes(lower)) return true;
+    if (['messaging', 'my network', 'home', 'jobs', 'advertising', 'contact info', 'edit', 'verify now', 'save', 'more'].includes(lower)) return true;
+    
     if (lower.includes('keyboard shortcuts')) return true;
+    
+    // Check for connection degree indicators (e.g. "· 1st", "1st", "2nd")
+    const cleanDegree = lower.replace(/[·\.]/g, '').trim();
+    if (['1st', '2nd', '3rd', 'in', 'out of network'].includes(cleanDegree)) return true;
+
     return false;
   };
 
@@ -42,7 +53,10 @@ export const scrapeLinkedInProfile = (): ExtractedData & { url: string } => {
   // --- MAIN LOGIC ---
 
   // 1. Target the Main Profile Card
-  const topCard = document.querySelector('.pv-top-card') || document.querySelector('.scaffold-layout__main');
+  const topCard = document.querySelector('.pv-top-card') 
+             || document.querySelector('.scaffold-layout__main') 
+             || document.querySelector('main')
+             || document.body;
   
   if (!topCard) {
     // Fallback: Use document title
@@ -58,7 +72,7 @@ export const scrapeLinkedInProfile = (): ExtractedData & { url: string } => {
     };
   }
 
-  // 2. NAME EXTRACTION
+  // 2. NAME EXTRACTION (LOGIC UNTOUCHED AS REQUESTED)
   let fullName = getTextFromSelectors(topCard, [
     'h1',
     '.text-heading-xlarge',
@@ -85,25 +99,59 @@ export const scrapeLinkedInProfile = (): ExtractedData & { url: string } => {
       ]);
   }
 
-  // Strategy C: Manual Sibling Traversal (Fallback)
+  // Strategy C: Manual Traversal (Robust Fallback for Verified/Complex Layouts)
   if (!title || title.includes(' Area') || (title.includes(',') && title.length < 20)) {
-      const nameEl = topCard.querySelector('h1');
+      // 1. Locate the Name Element using the already extracted fullName
+      // We search h1, h2, h3, spans, divs to find the node containing the exact name
+      const candidates = topCard.querySelectorAll('h1, h2, .text-heading-xlarge, span, div');
+      let nameEl: Element | null = null;
+      
+      for(const el of candidates) {
+          if (clean((el as HTMLElement).innerText) === fullName) {
+              nameEl = el;
+              break;
+          }
+      }
+
+      // 2. Walk up and scan siblings
       if (nameEl) {
-          // Look at the elements immediately following the name
-          let current = nameEl.parentElement?.nextElementSibling || nameEl.nextElementSibling;
+          let current: Element | null = nameEl;
+          let levels = 0;
+          let found = false;
           
-          // Try up to 3 siblings
-          for(let i=0; i<3; i++) {
-              if(!current) break;
-              const text = clean((current as HTMLElement).innerText);
-              
-              if (text && !isGarbage(text) && !text.toLowerCase().includes('contact info')) {
-                  if (!text.includes(' Area') && text.length > 3) {
-                      title = text;
-                      break;
-                  }
-              }
-              current = current.nextElementSibling;
+          // Walk up the DOM tree (max 6 levels) to find the container row
+          while (current && levels < 6) {
+             // Look at next siblings of the current ancestor
+             let sibling = current.nextElementSibling;
+             let scanCount = 0;
+
+             while(sibling && scanCount < 10) { // Scan up to 10 siblings
+                 const rawText = clean((sibling as HTMLElement).innerText);
+                 
+                 if (rawText && !isGarbage(rawText) && rawText !== fullName) {
+                     const lower = rawText.toLowerCase();
+                     // Heuristics:
+                     // 1. Not "Contact info"
+                     // 2. Not connection count ("500+ connections")
+                     // 3. Not location (usually contains comma and "Area" or "United") - though some headlines might too.
+                     // 4. Headlines are usually substantial (> 5 chars).
+                     
+                     const isLocation = lower.includes('united kingdom') || lower.includes('united states') || lower.includes(' area');
+                     const isMeta = lower.includes('connections') || lower.includes('followers') || lower.includes('contact info');
+
+                     if (!isLocation && !isMeta) {
+                          title = rawText;
+                          found = true;
+                          break;
+                     }
+                 }
+                 sibling = sibling.nextElementSibling;
+                 scanCount++;
+             }
+             
+             if (found) break;
+             current = current.parentElement;
+             levels++;
           }
       }
   }
@@ -112,26 +160,83 @@ export const scrapeLinkedInProfile = (): ExtractedData & { url: string } => {
   let company = '';
   let companyLinkedin = '';
   
-  const companyButton = topCard.querySelector('button[aria-label*="Current company"], a[aria-label*="Current company"]');
-  if (companyButton) {
-      // Get Name
-      const label = companyButton.getAttribute('aria-label') || '';
-      const match = label.match(/Current company: (.*?)\./);
-      if (match && match[1]) {
-          company = match[1];
-      } else {
-          company = clean((companyButton as HTMLElement).innerText);
+  // Strategy: Find Experience Section first
+  let experienceSection = document.getElementById('experience')?.closest('section');
+  
+  // Fallback if ID not found (sometimes it's dynamic)
+  if (!experienceSection) {
+      const headers = document.querySelectorAll('h2, span.pvs-header__title-text');
+      for (const h of headers) {
+          if (clean((h as HTMLElement).innerText).toLowerCase() === 'experience') {
+              experienceSection = h.closest('section');
+              break;
+          }
       }
+  }
 
-      // Get Link
-      const anchor = companyButton.tagName === 'A' ? companyButton : companyButton.closest('a');
-      if (anchor) {
-        // Typically /company/name/
-        let href = (anchor as HTMLAnchorElement).href;
-        if (href.startsWith('/')) href = 'https://www.linkedin.com' + href;
-        if (href.includes('linkedin.com/company')) {
-            companyLinkedin = href.split('?')[0]; // Clean params
-        }
+  if (experienceSection) {
+      // Get the first experience item
+      const firstItem = experienceSection.querySelector(
+          'li.artdeco-list__item, li.pvs-list__paged-list-item, div[componentkey^="entity-collection-item"]'
+      );
+
+      if (firstItem) {
+          // 1. Find all Company Links in this item
+          const companyAnchors = firstItem.querySelectorAll('a[href*="/company/"]');
+          
+          for (const anchor of companyAnchors) {
+              // Get URL
+              if (!companyLinkedin) {
+                  let href = (anchor as HTMLAnchorElement).href;
+                  if (href.startsWith('/')) href = 'https://www.linkedin.com' + href;
+                  companyLinkedin = href.split('?')[0];
+              }
+
+              // Get Name from Logo Alt Text (High Reliability)
+              const img = anchor.querySelector('img[alt*=" logo"]');
+              if (img && !company) {
+                  company = (img.getAttribute('alt') || '').replace(/ logo$/i, '').trim();
+              }
+
+              // Get Name from Text Content inside Anchor (if not found via logo)
+              if (!company) {
+                  // The text content might be multi-line (Name \n Duration)
+                  // We take the first non-empty line
+                  const lines = (anchor as HTMLElement).innerText.split('\n');
+                  for (const line of lines) {
+                      const t = clean(line);
+                      if (t && !isGarbage(t) && !t.match(/\b(mos|yrs|mo|yr|Present|Full-time)\b/)) {
+                          company = t;
+                          break;
+                      }
+                  }
+              }
+          }
+      }
+  }
+
+  // Fallback: Top Card extraction (if Experience section failed)
+  if (!company) {
+      const companyButton = topCard.querySelector('button[aria-label*="Current company"], a[aria-label*="Current company"]');
+      if (companyButton) {
+          // Get Name
+          const label = companyButton.getAttribute('aria-label') || '';
+          const match = label.match(/Current company: (.*?)\./);
+          if (match && match[1]) {
+              company = match[1];
+          } else {
+              company = clean((companyButton as HTMLElement).innerText);
+          }
+
+          // Get Link
+          const anchor = companyButton.tagName === 'A' ? companyButton : companyButton.closest('a');
+          if (anchor && !companyLinkedin) {
+              let href = (anchor as HTMLAnchorElement).href;
+              if (href.startsWith('/')) href = 'https://www.linkedin.com' + href;
+              if (href.includes('linkedin.com/company')) {
+                  companyLinkedin = href.split('?')[0]; 
+              }
+          }
       }
   }
 
@@ -151,13 +256,10 @@ export const scrapeLinkedInProfile = (): ExtractedData & { url: string } => {
   let lastPostContent = '';
   
   // Find Activity Section
-  // We look for sections that might contain the activity.
   const allSections = document.querySelectorAll('section');
   let activitySection: Element | null = null;
   
-  // Strategy 1: Find by Header Text
   for (const sec of allSections) {
-      // Check for header
       const header = sec.querySelector('.pvs-header__title, span.pvs-header__title-text') || sec.querySelector('h2');
       if (header) {
           const text = (header as HTMLElement).innerText || '';
@@ -166,7 +268,6 @@ export const scrapeLinkedInProfile = (): ExtractedData & { url: string } => {
               break;
           }
       }
-      // Check for ID
       if (sec.id && sec.id.includes('activity')) {
           activitySection = sec;
           break;
@@ -174,38 +275,20 @@ export const scrapeLinkedInProfile = (): ExtractedData & { url: string } => {
   }
 
   if (activitySection) {
-      // Find list items
-      // They are often in a ul > li structure within .pvs-list__outer-container
       const items = activitySection.querySelectorAll('li.artdeco-list__item, li.pvs-list__paged-list-item');
-      
       for (const item of items) {
-          // Find text content
-          // 1. Try .inline-show-more-text (Used for "Post content...")
-          // 2. Try .feed-shared-update-v2__description (Used in full feed view)
-          // 3. Try span.break-words (Generic)
-          
           const textCandidates = item.querySelectorAll('.inline-show-more-text, .feed-shared-update-v2__description .update-components-text, span.break-words');
-          
           for (const candidate of textCandidates) {
               const text = clean((candidate as HTMLElement).innerText);
-              
               if (text && text.length > 15) {
                   const lower = text.toLowerCase();
-                  // Filter out metadata
-                  if (
-                      !lower.startsWith('liked by') &&
-                      !lower.startsWith('reposted') &&
-                      !lower.includes('commented on this') &&
-                      !lower.includes('likes') && 
-                      !lower.includes('comments') &&
-                      !lower.includes('followers')
-                  ) {
+                  if (!lower.startsWith('liked by') && !lower.startsWith('reposted') && !lower.includes('commented on this') && !lower.includes('likes') && !lower.includes('comments') && !lower.includes('followers')) {
                       lastPostContent = text;
                       break; 
                   }
               }
           }
-          if (lastPostContent) break; // Found latest post
+          if (lastPostContent) break;
       }
   }
 

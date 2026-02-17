@@ -23,17 +23,26 @@ const App: React.FC = () => {
   
   // 1. Persistence for Work In Progress (currentLead)
   const [currentLead, setCurrentLead] = useState<(Partial<Lead> & Partial<ExtractedData>) | null>(() => {
-    const savedWork = localStorage.getItem('linkclipper_current_work');
-    return savedWork ? JSON.parse(savedWork) : null;
+    try {
+        const savedWork = localStorage.getItem('linkclipper_current_work');
+        return savedWork ? JSON.parse(savedWork) : null;
+    } catch (e) {
+        console.error("Failed to parse current work:", e);
+        return null;
+    }
   });
 
   const [leads, setLeads] = useState<Lead[]>(() => {
-    const saved = localStorage.getItem('linkclipper_leads');
-    return saved ? JSON.parse(saved) : [];
+    try {
+        const saved = localStorage.getItem('linkclipper_leads');
+        return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+        console.error("Failed to parse leads:", e);
+        return [];
+    }
   });
   
   const [settings, setSettings] = useState<UserSettings>(() => {
-      const saved = localStorage.getItem('linkclipper_settings');
       const defaultSettings: UserSettings = { 
           googleScriptUrl: '', 
           openaiApiKey: '',
@@ -47,17 +56,18 @@ const App: React.FC = () => {
           }
       };
       
-      if (saved) {
-          try {
+      try {
+          const saved = localStorage.getItem('linkclipper_settings');
+          if (saved) {
               const parsed = JSON.parse(saved);
               return { 
                   ...defaultSettings, 
                   ...parsed,
                   customPrompts: { ...defaultSettings.customPrompts, ...(parsed.customPrompts || {}) }
               };
-          } catch (e) {
-              return defaultSettings;
           }
+      } catch (e) {
+          console.error("Failed to parse settings:", e);
       }
       return defaultSettings;
   });
@@ -298,7 +308,7 @@ const App: React.FC = () => {
             <div className="flex items-center gap-2">
                 <button 
                   onClick={() => setShowSettings(!showSettings)}
-                  className={`p-2 rounded-full transition-colors ${showSettings ? 'bg-gray-100 text-linkedin-600' : 'text-gray-500 hover:text-linkedin-600 hover:bg-gray-100'}`}
+                  className={`p-2 rounded-full transition-colors ${showSettings ? 'bg-gray-100 text-linkedin-600' : 'text-gray-500 hover:text-linkedin-600 hover:text-gray-900 hover:bg-gray-100'}`}
                 >
                     <SettingsIcon className="w-5 h-5" />
                 </button>
